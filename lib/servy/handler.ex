@@ -1,11 +1,43 @@
 defmodule Servy.Handler do
+  require Logger
+
   def handle(request) do
     request
     |> parse
+    |> rewrite_path
     |> log
     |> route
+    |> emojify
+    |> track
     |> format_response
   end
+
+  def emojify(%{status: 200, resp_body: resp_body} = conv) do
+    emojies = String.duplicate("🎉", 5)
+    body = resp_body <> "\n" <> emojies
+    %{conv | resp_body: body}
+  end
+
+  def emojify(conv), do: conv
+
+  def track(%{status: 404, path: path} = conv) do
+    Logger.warn("Warning: #{path} is on the loose!")
+    conv
+  end
+
+  def track(conv), do: conv
+
+  def rewrite_path(%{path: path} = conv) do
+    regex = ~r{\/(?<thing>\w+)\?id=(?<id>\d+)}
+    captures = Regex.named_captures(regex, path)
+    rewrite_path_captures(conv, captures)
+  end
+
+  defp rewrite_path_captures(conv, %{"thing" => thing, "id" => id} = _captures) do
+    %{conv | path: "/#{thing}/#{id}"}
+  end
+
+  defp rewrite_path_captures(conv, nil), do: conv
 
   def log(conv) do
     IO.inspect(conv)
@@ -21,27 +53,23 @@ defmodule Servy.Handler do
     %{method: method, path: path, status: nil, resp_body: ""}
   end
 
-  def route(conv) do
-    route(conv, conv.method, conv.path)
-  end
-
-  def route(conv, "GET", "/wildthings") do
+  def route(%{method: "GET", path: "/wildthings"} = conv) do
     %{conv | status: 200, resp_body: "Bears, Lions, Tigers"}
   end
 
-  def route(conv, "GET", "/bears") do
+  def route(%{method: "GET", path: "/bears"} = conv) do
     %{conv | status: 200, resp_body: "Teddy, Smokey, Paddington"}
   end
 
-  def route(conv, "GET", "/bears/" <> id) do
+  def route(%{method: "GET", path: "/bears/" <> id} = conv) do
     %{conv | status: 200, resp_body: "Bear #{id}"}
   end
 
-  def route(conv, "DELETE", "/bears/" <> _id) do
+  def route(%{method: "DELETE", path: "/bears/" <> _id} = conv) do
     %{conv | status: 403, resp_body: "Deleting a bear is forbidden!"}
   end
 
-  def route(conv, _method, path) do
+  def route(%{path: path} = conv) do
     %{conv | status: 404, resp_body: "No #{path} here!"}
   end
 
@@ -68,7 +96,7 @@ defmodule Servy.Handler do
 end
 
 request = """
-DELETE /bears/1 HTTP/1.1
+GET /bearsss HTTP/1.1
 Host: example.com
 User-Agent: ExampleBrowser/1.0
 Accept: */*
